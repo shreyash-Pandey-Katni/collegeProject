@@ -37,7 +37,7 @@ import seaborn as sns
 import random
 
 app = Flask(__name__)
-con = sqlite3.connect('auth.db')
+con = sqlite3.connect('auth.db', check_same_thread=False)
 cur = con.cursor()
 
 cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT, sessionId TEXT, risk_parameter REAL, portfolio_value REAL)")
@@ -157,14 +157,16 @@ def login():
     username = request.args.get('username')
     password = request.args.get('password')
     try:
-        cur.execute('SELECT * FROM users WHERE username = ?', (username,))
+        cur.execute("SELECT * FROM users WHERE username = ?", (username,))
         user = cur.fetchone()
         if user is None:
             return jsonify({'success': False, 'error': 'User not found'})
+        if not bcrypt.checkpw(password.encode('utf-8'), user[2]):
+            return jsonify({'success': True, 'sessionId': user[3]})
         sessionId = secrets.token_hex(16)
         cur.execute(
             'UPDATE users SET sessionId = ? WHERE username = ?', (sessionId, username))
-        return jsonify({'success': True, 'sessionId': sessionId, 'user': user})
+        return jsonify({'success': True, 'sessionId': sessionId, 'user': {'username': user[0], 'risk_parameter': user[4]}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -270,6 +272,7 @@ def getRiskParameter():
 @app.route('/update_portfolio_value')
 def updatePortfolioValue():
     newPortfolioValue = request.args.get('portfolio_value')
+    sessionId = request.args.get('sessionId')
     try:
         temp = cur.execute(
             "UPDATE users SET portfolio_value = ? WHERE sessionId = ?", (newPortfolioValue, sessionId))
