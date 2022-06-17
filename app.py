@@ -135,6 +135,11 @@ def signup():
             password.encode('utf-8'), bcrypt.gensalt())
         sessionId = secrets.token_hex(16)
         risk_parameter = data['risk_parameter']
+        user = cur.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        print(user)
+        if user is not None:
+            res.status_code = 400
+            return jsonify({'error': 'User already exists'})
         cur.execute("INSERT INTO users (username, password, sessionId, risk_parameter) VALUES (?, ?, ?, ?)",
                     (username, hashed_password, sessionId, risk_parameter))
         con.commit()
