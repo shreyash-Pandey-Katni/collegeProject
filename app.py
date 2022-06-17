@@ -135,7 +135,8 @@ def signup():
             password.encode('utf-8'), bcrypt.gensalt())
         sessionId = secrets.token_hex(16)
         risk_parameter = data['risk_parameter']
-        user = cur.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        user = cur.execute(
+            "SELECT * FROM users WHERE username = ?", (username,)).fetchone()
         print(user)
         if user is not None:
             res.status_code = 400
@@ -166,7 +167,7 @@ def login():
         sessionId = secrets.token_hex(16)
         cur.execute(
             'UPDATE users SET sessionId = ? WHERE username = ?', (sessionId, username))
-        return jsonify({'success': True, 'sessionId': sessionId, 'user': {'username': user[0], 'risk_parameter': user[4]}})
+        return jsonify({'success': True, 'sessionId': sessionId, 'user': {'username': user[1], 'risk_parameter': user[4], 'portfolio': user[5]}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
