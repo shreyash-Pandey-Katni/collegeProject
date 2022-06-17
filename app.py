@@ -276,7 +276,7 @@ def updatePortfolioValue():
     try:
         temp = cur.execute(
             "UPDATE users SET portfolio_value = ? WHERE sessionId = ?", (newPortfolioValue, sessionId))
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'portfolio_value': newPortfolioValue})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
