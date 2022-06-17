@@ -1,4 +1,5 @@
 import json
+import os
 from random import random
 import secrets
 from flask import Flask, Response, request, jsonify
@@ -39,18 +40,19 @@ app = Flask(__name__)
 con = sqlite3.connect('auth.db')
 cur = con.cursor()
 
-cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT, sessionId TEXT, risk_parameter REAL)")
+cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT, sessionId TEXT, risk_parameter REAL, portfolio_value REAL)")
 
+dataLocation = 'data/'
 
 data = {}
-data['VTI'] = pd.read_csv('VTI.csv', index_col=0)
-data['VTV'] = pd.read_csv('VTV.csv', index_col=0)
-data['VOE'] = pd.read_csv('VOE.csv', index_col=0)
-data['VBR'] = pd.read_csv('VBR.csv', index_col=0)
-data['GBIL'] = pd.read_csv('GBIL.csv', index_col=0)
-data['JPST'] = pd.read_csv('JPST.csv', index_col=0)
-data['VNQ'] = pd.read_csv('VNQ.csv', index_col=0)
-data['VPU'] = pd.read_csv('VPU.csv', index_col=0)
+data['VTI'] = pd.read_csv(dataLocation + 'VTI.csv', index_col=0)
+data['VTV'] = pd.read_csv(dataLocation + 'VTV.csv', index_col=0)
+data['VOE'] = pd.read_csv(dataLocation + 'VOE.csv', index_col=0)
+data['VBR'] = pd.read_csv(dataLocation + 'VBR.csv', index_col=0)
+data['GBIL'] = pd.read_csv(dataLocation + 'GBIL.csv', index_col=0)
+data['JPST'] = pd.read_csv(dataLocation + 'JPST.csv', index_col=0)
+data['VNQ'] = pd.read_csv(dataLocation + 'VNQ.csv', index_col=0)
+data['VPU'] = pd.read_csv(dataLocation + 'VPU.csv', index_col=0)
 
 
 onlyClosePrices = pd.DataFrame()
@@ -98,13 +100,13 @@ print("Dataset created")
 
 models = {}
 for ticker in data:
-    models[ticker] = load_model(ticker + '.h5')
-    models[ticker].load_weights(ticker + '_weights.h5')
+    models[ticker] = load_model("models/" + ticker + '.h5')
+    models[ticker].load_weights("weights/" + ticker + '_weights.h5')
 print("Models loaded")
 
 
 netAssets = {}
-assets = pd.read_csv('assets.csv', index_col=0)
+assets = pd.read_csv('data/assets.csv', index_col=0)
 for ticker in data:
     netAssets[ticker] = assets['0'][ticker]
 print("Net assets loaded")
@@ -112,7 +114,6 @@ print("Net assets loaded")
 viewDict = {}
 confidence = []
 for ticker in data:
-    print(ticker)
     pred = models[ticker].predict(testX[ticker])
     viewDict[ticker] = (pred[-1, 0] - testX[ticker]
                         [-2, 0])/testX[ticker][-2, 0]
@@ -158,7 +159,7 @@ def login():
         sessionId = secrets.token_hex(16)
         cur.execute(
             'UPDATE users SET sessionId = ? WHERE username = ?', (sessionId, username))
-        return jsonify({'success': True, 'sessionId': sessionId})
+        return jsonify({'success': True, 'sessionId': sessionId, 'user': user})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -238,3 +239,41 @@ def get_prediction():
         return jsonify({'success': True, 'weights': json.dumps(weights)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/update_risk_parameter')
+def update_risk_parameter():
+    newRiskParameter = request.args.get('risk_parameter')
+    try:
+        temp = cur.execute(
+            "UPDATE users SET risk_parameter = ? WHERE sessionId = ?", (newRiskParameter, sessionId))
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/get_risk_parameter')
+def getRiskParameter():
+    try:
+        riskParameter = cur.execute(
+            "SELECT risk_parameter FROM users WHERE sessionId = ?", (sessionId,)).fetchone()[0]
+        return jsonify({'success': True, 'risk_parameter': riskParameter})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/update_portfolio_value')
+def updatePortfolioValue():
+    newPortfolioValue = request.args.get('portfolio_value')
+    try:
+        temp = cur.execute(
+            "UPDATE users SET portfolio_value = ? WHERE sessionId = ?", (newPortfolioValue, sessionId))
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/restart_server')
+def restart_server():
+    app.stop()
+    return jsonify({'success': True})
