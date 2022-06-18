@@ -77,7 +77,7 @@ testData = {}
 
 for ticker in data:
     trainingData[ticker], testData[ticker] = train_test_split(
-        data[ticker], test_size=0.2, shuffle=False)
+        data[ticker], test_size=0.8, shuffle=False)
 
 
 def create_dataset(dataset, look_back=1):
@@ -115,10 +115,10 @@ viewDict = {}
 confidence = []
 for ticker in data:
     pred = models[ticker].predict(testX[ticker])
-    viewDict[ticker] = (pred[-1, 0] - testX[ticker]
-                        [-2, 0])/testX[ticker][-2, 0]
+    viewDict[ticker] = (testX[ticker]
+                        [-1, 0] -pred[-1, 0])/10/testX[ticker][-1, 0]
     confidence.append(
-        1-models[ticker].evaluate(testX[ticker], testY[ticker])[1])
+        1)
 
 print('server started')
 
@@ -240,7 +240,7 @@ def get_prediction():
         bl_return_confi.name = 'BL Returns with Confidence'
         S_bl_confi = bl_confi.bl_cov()
         ef = pypfopt.EfficientFrontier(
-            bl_return_confi, S_bl_confi, weight_bounds=(0, 0.2))
+            bl_return_confi, S_bl_confi, weight_bounds=(0.01, 0.3))
         weights = ef.min_volatility()
         ef.portfolio_performance(verbose=True)
         res.status_code = 200
@@ -252,9 +252,12 @@ def get_prediction():
 @app.route('/update_risk_parameter')
 def update_risk_parameter():
     newRiskParameter = request.args.get('risk_parameter')
+    sessionId = request.args.get('sessionId')
+    user = request.args.get('username')
     try:
-        temp = cur.execute(
-            "UPDATE users SET risk_parameter = ? WHERE sessionId = ?", (newRiskParameter, sessionId))
+        cur.execute(
+            "UPDATE users SET risk_parameter = ? WHERE sessionId = ? OR username = ?", (newRiskParameter, sessionId, user))
+        con.commit()
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
