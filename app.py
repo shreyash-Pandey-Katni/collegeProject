@@ -39,21 +39,21 @@ import random
 app = Flask(__name__)
 con = sqlite3.connect('auth.db', check_same_thread=False)
 cur = con.cursor()
+etfs = pd.read_csv('data/etfs.csv')
 
 cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT, sessionId TEXT, risk_parameter REAL, portfolio_value REAL)")
 
 dataLocation = 'data/'
 
 data = {}
-data['VTI'] = pd.read_csv(dataLocation + 'VTI.csv', index_col=0)
-data['VTV'] = pd.read_csv(dataLocation + 'VTV.csv', index_col=0)
-data['VOE'] = pd.read_csv(dataLocation + 'VOE.csv', index_col=0)
-data['VBR'] = pd.read_csv(dataLocation + 'VBR.csv', index_col=0)
-data['GBIL'] = pd.read_csv(dataLocation + 'GBIL.csv', index_col=0)
-data['JPST'] = pd.read_csv(dataLocation + 'JPST.csv', index_col=0)
-data['VNQ'] = pd.read_csv(dataLocation + 'VNQ.csv', index_col=0)
-data['VPU'] = pd.read_csv(dataLocation + 'VPU.csv', index_col=0)
+for i in range(len(etfs)):
+    data[etfs.iloc[i, 0]] = pd.read_csv(dataLocation + etfs.iloc[i, 0] + '.csv', index_col=0)
 
+confidence = []
+for ticker in data:
+    confidence.append(np.log(1 - (np.log(data[ticker]['Close'] /
+                                   data[ticker]['Close'].shift(-1))).std()*np.sqrt(252))*(-1))
+#    volatility_etfs[ticker] = 1- np.log(data[ticker]['Close'].pct_change()).dropna()
 
 onlyClosePrices = pd.DataFrame()
 for ticker in data:
@@ -63,14 +63,8 @@ S = pypfopt.risk_models.CovarianceShrinkage(onlyClosePrices).ledoit_wolf()
 
 scalar = MinMaxScaler(feature_range=(-1, 1))
 
-data['VTI'] = scalar.fit_transform(data['VTI'].dropna())
-data['VTV'] = scalar.fit_transform(data['VTV'].dropna())
-data['VOE'] = scalar.fit_transform(data['VOE'].dropna())
-data['VBR'] = scalar.fit_transform(data['VBR'].dropna())
-data['GBIL'] = scalar.fit_transform(data['GBIL'].dropna())
-data['JPST'] = scalar.fit_transform(data['JPST'].dropna())
-data['VNQ'] = scalar.fit_transform(data['VNQ'].dropna())
-data['VPU'] = scalar.fit_transform(data['VPU'].dropna())
+for ticker in data:
+    data[ticker] = scalar.fit_transform(data[ticker])
 
 trainingData = {}
 testData = {}
@@ -91,7 +85,7 @@ def create_dataset(dataset, look_back=1):
 
 trainX, trainY = {}, {}
 testX, testY = {}, {}
-timeStep = 100
+timeStep = 20
 for ticker in data:
     trainX[ticker], trainY[ticker] = create_dataset(
         trainingData[ticker], timeStep)
@@ -100,7 +94,7 @@ print("Dataset created")
 
 models = {}
 for ticker in data:
-    models[ticker] = load_model("models/" + ticker + '.h5')
+    models[ticker] = load_model("models/2/" + ticker + '.h5')
     models[ticker].load_weights("weights/" + ticker + '_weights.h5')
 print("Models loaded")
 
@@ -112,13 +106,12 @@ for ticker in data:
 print("Net assets loaded")
 
 viewDict = {}
-confidence = []
 for ticker in data:
     pred = models[ticker].predict(testX[ticker])
     viewDict[ticker] = (testX[ticker]
                         [-1, 0] -pred[-1, 0])/10/testX[ticker][-1, 0]
-    confidence.append(
-        1)
+print("View dict loaded")
+    
 
 print('server started')
 
@@ -233,9 +226,9 @@ def get_prediction():
         if sessionIdDb != sessionId:
             return jsonify({'success': False, 'error': 'Session ID mismatch'})
         delta = pypfopt.black_litterman.market_implied_risk_aversion(
-            pd.Series(netAssets), risk_free_rate=risk_parameter)
+            pd.Series(netAssets))
         bl_confi = pypfopt.BlackLittermanModel(
-            S, absolute_views=viewDict, omega="idzorek", rho=delta, view_confidences=confidence)
+            S, absolute_views=viewDict, omega="idzorek", rho=delta, view_confidences=confidence, risk_aversion=risk_parameter)
         bl_return_confi = bl_confi.bl_returns()
         bl_return_confi.name = 'BL Returns with Confidence'
         S_bl_confi = bl_confi.bl_cov()
