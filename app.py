@@ -45,14 +45,23 @@ cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username 
 
 dataLocation = 'data/'
 
+very_low = ['GOLDBEES.NS', 'BLV', 'VUSTX', 'VNQ', 'VPU']
+low = ['GOLDBEES.NS', 'BLV', 'VNQ', 'VTI','JUST']
+medium = ['GOLDBEES.NS', 'BSV', 'VGSH', 'VTI','JUST']
+high = ['VO', 'IVOG', 'BSV','VTI','JUST']
+very_high = ['VBK', 'VIOG', 'VO', 'IVOG','VTI']
+
 data = {}
 for i in range(len(etfs)):
     data[etfs.iloc[i, 0]] = pd.read_csv(dataLocation + etfs.iloc[i, 0] + '.csv', index_col=0)
 
-confidence = []
+confidence = {}
 for ticker in data:
-    confidence.append(np.log(1 - (np.log(data[ticker]['Close'] /
-                                   data[ticker]['Close'].shift(-1))).std()*np.sqrt(252))*(-1))
+    if ticker == 'GOLDBEES.NS':
+        confidence[ticker] = np.log(data['GOLDBEES.NS']['Close']/data['GOLDBEES.NS']['Close'].shift(-1).dropna()).std()*np.sqrt(252)
+        continue
+    confidence[ticker] = abs(np.log(data[ticker]['Close'] /
+                                   data[ticker]['Close'].shift(-1)).std()*np.sqrt(252))
 #    volatility_etfs[ticker] = 1- np.log(data[ticker]['Close'].pct_change()).dropna()
 
 onlyClosePrices = pd.DataFrame()
@@ -94,8 +103,8 @@ print("Dataset created")
 
 models = {}
 for ticker in data:
-    models[ticker] = load_model("models/2/" + ticker + '.h5')
-    models[ticker].load_weights("weights/" + ticker + '_weights.h5')
+    models[ticker] = load_model("models/" + ticker+"_4" + '.h5')
+    models[ticker].load_weights("weights/" + ticker + '_4_weights.h5')
 print("Models loaded")
 
 
@@ -225,10 +234,46 @@ def get_prediction():
             'SELECT risk_parameter FROM users WHERE username = ?', (user,)).fetchone()[0]
         if sessionIdDb != sessionId:
             return jsonify({'success': False, 'error': 'Session ID mismatch'})
+        temp_netAssets = {}
+        temp_viewdict = {}
+        temp_confidence = []
+        temp_onlyClosePrices = pd.DataFrame()
+        if risk_parameter <0.2:
+            for ticker in very_low:
+                temp_netAssets[ticker] = netAssets[ticker]
+                temp_viewdict[ticker] = viewDict[ticker]
+                temp_confidence.append(confidence[ticker])
+                temp_onlyClosePrices[ticker] = onlyClosePrices[ticker]
+        elif risk_parameter <0.4:
+            for ticker in low:
+                temp_netAssets[ticker] = netAssets[ticker]
+                temp_viewdict[ticker] = viewDict[ticker]
+                temp_confidence.append(confidence[ticker])
+                temp_onlyClosePrices[ticker] = onlyClosePrices[ticker]
+        elif risk_parameter <0.6:
+            for ticker in medium:
+                temp_netAssets[ticker] = netAssets[ticker]
+                temp_viewdict[ticker] = viewDict[ticker]
+                temp_confidence.append(confidence[ticker])
+                temp_onlyClosePrices[ticker] = onlyClosePrices[ticker]
+        elif risk_parameter <0.8:
+            for ticker in high:
+                temp_netAssets[ticker] = netAssets[ticker]
+                temp_viewdict[ticker] = viewDict[ticker]
+                temp_confidence.append(confidence[ticker])
+                temp_onlyClosePrices[ticker] = onlyClosePrices[ticker]
+        else :
+            for ticker in very_high:
+                temp_netAssets[ticker] = netAssets[ticker]
+                temp_viewdict[ticker] = viewDict[ticker]
+                temp_confidence.append(confidence[ticker])
+                temp_onlyClosePrices[ticker] = onlyClosePrices[ticker]
+        temp_S = pypfopt.risk_models.CovarianceShrinkage(
+            temp_onlyClosePrices).ledoit_wolf()
         delta = pypfopt.black_litterman.market_implied_risk_aversion(
-            pd.Series(netAssets))
+            pd.Series(temp_netAssets))
         bl_confi = pypfopt.BlackLittermanModel(
-            S, absolute_views=viewDict, omega="idzorek", rho=delta, view_confidences=confidence, risk_aversion=risk_parameter)
+            temp_S, absolute_views=temp_viewdict, rho=delta, view_confidences=temp_confidence, risk_aversion=risk_parameter)
         bl_return_confi = bl_confi.bl_returns()
         bl_return_confi.name = 'BL Returns with Confidence'
         S_bl_confi = bl_confi.bl_cov()
